@@ -162,31 +162,28 @@ by_gender_MF
 ## Visualizations
 
 ```{r gender-identity-plot, fig.width=8, fig.height=6}
-ggplot(comic_clean, aes(x = sex, fill = id)) +
-  geom_bar(position = "fill") +
-  labs(
+gf_bar(~ sex, fill = ~ id, data = comic_clean, position = "fill") %>%
+  gf_labs(
     title = "Do Genders Differ in Having a Secret Identity?",
     y = "Proportion",
     x = "Gender"
-  ) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ) %>%
+  gf_theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ```{r gender-counts-plots, fig.width=10, fig.height=5}
 # Counts plot
-ggplot(comic_clean, aes(x = sex)) +
-  geom_bar() +
-  labs(title = "Number of Characters by Gender",
-       y = "Count", x = "Gender")
+gf_bar(~ sex, data = comic_clean) %>%
+  gf_labs(title = "Number of Characters by Gender",
+          y = "Count", x = "Gender")
 
 # Proportions plot
-ggplot(comic_clean %>% 
-         filter(id %in% c("Secret Identity", "Public Identity")),
-       aes(x = sex, fill = id)) +
-  geom_bar(position = "fill") +
-  labs(title = "Secret vs Public Identities by Gender",
-       y = "Proportion", x = "Gender") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+comic_clean %>% 
+  filter(id %in% c("Secret Identity", "Public Identity")) %>%
+  gf_bar(~ sex, fill = ~ id, position = "fill") %>%
+  gf_labs(title = "Secret vs Public Identities by Gender",
+          y = "Proportion", x = "Gender") %>%
+  gf_theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ## Probability Calculations
@@ -236,17 +233,17 @@ female_data <- comic_clean %>%
          !is.na(year)) %>%
   mutate(year = as.numeric(year))
 
-# Create scatterplot
-ggplot(female_data, aes(x = year, y = id, color = id)) +
-  geom_jitter(height = 0.2, alpha = 0.6, size = 2) +
-  labs(
+# Create scatterplot with jitter
+gf_jitter(id ~ year, data = female_data, color = ~ id, 
+          height = 0.2, alpha = 0.6, size = 2) %>%
+  gf_labs(
     title = "Female Characters' Identity Type by Year of Introduction",
     x = "Year Introduced",
     y = "Identity Type",
     color = "Identity Type"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
+  ) %>%
+  gf_theme(theme_minimal()) %>%
+  gf_theme(legend.position = "bottom")
 
 # Summary statistics by decade
 female_decade <- female_data %>%
@@ -257,33 +254,138 @@ female_decade <- female_data %>%
   mutate(prop = count / sum(count))
 
 # Plot proportion over time
-ggplot(female_decade, aes(x = decade, y = prop, fill = id)) +
-  geom_col(position = "fill") +
-  labs(
+gf_col(prop ~ decade, fill = ~ id, data = female_decade, position = "fill") %>%
+  gf_labs(
     title = "Proportion of Female Characters with Secret vs Public Identity by Decade",
     x = "Decade",
     y = "Proportion",
     fill = "Identity Type"
-  ) +
-  theme_minimal() +
-  scale_y_continuous(labels = scales::percent)
+  ) %>%
+  gf_theme(theme_minimal()) %>%
+  gf_refine(scale_y_continuous(labels = scales::percent))
+
 # Count female characters introduced each year
 female_year_counts <- female_data %>%
   group_by(year) %>%
   summarise(count = n(), .groups = "drop")
 
 # Plot number introduced per year
-ggplot(female_year_counts, aes(x = year, y = count)) +
-  geom_col() +
-  labs(
+gf_col(count ~ year, data = female_year_counts) %>%
+  gf_labs(
     title = "Number of Female Characters Introduced Each Year",
     x = "Year",
     y = "Count of Female Characters"
-  ) +
-  theme_minimal()
+  ) %>%
+  gf_theme(theme_minimal())
 
+male_data <- comic_clean %>%
+  filter(sex == "Male", 
+         !is.na(year)) %>%
+  mutate(year = as.numeric(year))
+
+male_year_counts <- male_data %>%
+  group_by(year) %>%
+  summarise(count = n(), .groups = "drop")
+
+gf_col(count ~ year, data = male_year_counts) %>%
+  gf_labs(
+    title = "Number of Male Characters Introduced Each Year",
+    x = "Year",
+    y = "Count of Female Characters"
+  ) %>%
+  gf_theme(theme_minimal())
+
+# Calculate proportions for modeling
+female_prop <- female_data %>%
+  group_by(year) %>%
+  summarise(
+    total = n(),
+    secret_count = sum(id == "Secret Identity"),
+    prop_secret = secret_count / total
+  )
+
+empty_model <- lm(prop_secret ~ NULL, data = female_prop)
+
+cat("Empty Model Summary:\n")
+summary(empty_model)
+cat("\nBaseline (mean proportion of secret identities):", round(coef(empty_model), 4), "\n")
+
+# Model with year as predictor
+year_model <- lm(prop_secret ~ year, data = female_prop)
+
+cat("\n\nYear Model Summary:\n")
+summary(year_model)
+
+# Compare models
+cat("\n\nModel Comparison:\n")
+cat("Empty Model R-squared:", round(summary(empty_model)$r.squared, 4), "\n")
+cat("Year Model R-squared:", round(summary(year_model)$r.squared, 4), "\n")
+
+# Scatterplot with regression line
+gf_point(prop_secret ~ year, data = female_prop, 
+         size = ~ total, alpha = 0.6, color = "purple") %>%
+  gf_lm(color = "blue", linewidth = 1.5) %>%
+  gf_labs(
+    title = "Female Characters: Proportion with Secret Identity Over Time",
+    subtitle = "With linear regression trendline and 95% confidence interval",
+    x = "Year Introduced",
+    y = "Proportion with Secret Identity",
+    size = "# Characters"
+  ) %>%
+  gf_theme(theme_minimal()) %>%
+  gf_refine(scale_y_continuous(labels = scales::percent))
+# Filter for male characters
+
+male_data <- comic_clean %>%
+filter(sex == "Male", !is.na(year)) %>%
+mutate(year = as.numeric(year))
+
+# Calculate proportion secret by year for each sex
+
+male_prop <- male_data %>%
+group_by(year) %>%
+summarise(
+total = n(),
+secret_count = sum(id == "Secret Identity"),
+prop_secret = secret_count / total,
+sex = "Male",
+.groups = "drop"
+)
+
+female_prop <- female_data %>%
+group_by(year) %>%
+summarise(
+total = n(),
+secret_count = sum(id == "Secret Identity"),
+prop_secret = secret_count / total,
+sex = "Female",
+.groups = "drop"
+)
+
+combined_prop <- bind_rows(female_prop, male_prop)
+
+# Scatterplot with trendlines for both male & female
+
+gf_point(prop_secret ~ year,
+data = combined_prop,
+color = ~sex,
+size = ~total,
+alpha = 0.6) %>%
+gf_lm(color = ~sex, linewidth = 1.4) %>%
+gf_labs(
+title = "Proportion with Secret Identity Over Time (Male vs Female)",
+subtitle = "Each sex shown with its own trendline and weighted point sizes",
+x = "Year Introduced",
+y = "Proportion with Secret Identity",
+color = "Sex",
+size = "# Characters"
+) %>%
+gf_theme(theme_minimal()) %>%
+gf_refine(scale_y_continuous(labels = scales::percent)) %>%
+gf_theme(legend.position = "bottom")
 
 ```
+
 # Research Question 3: Identity Type Distribution
 
 ```{r identity-type-distribution}
