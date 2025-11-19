@@ -227,6 +227,63 @@ cat("P(Secret | Female) =", round(p_secret_female_dc, 4), "\n")
 cat("Difference =", round(diff_dc, 4), "\n")
 ```
 
+## Female Characters Over Time
+
+```{r female-characters-timeline, fig.width=10, fig.height=6}
+# Filter for female characters with valid year and identity data
+female_data <- comic_clean %>%
+  filter(sex == "Female", 
+         !is.na(year)) %>%
+  mutate(year = as.numeric(year))
+
+# Create scatterplot
+ggplot(female_data, aes(x = year, y = id, color = id)) +
+  geom_jitter(height = 0.2, alpha = 0.6, size = 2) +
+  labs(
+    title = "Female Characters' Identity Type by Year of Introduction",
+    x = "Year Introduced",
+    y = "Identity Type",
+    color = "Identity Type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Summary statistics by decade
+female_decade <- female_data %>%
+  mutate(decade = floor(year / 10) * 10) %>%
+  group_by(decade, id) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(decade) %>%
+  mutate(prop = count / sum(count))
+
+# Plot proportion over time
+ggplot(female_decade, aes(x = decade, y = prop, fill = id)) +
+  geom_col(position = "fill") +
+  labs(
+    title = "Proportion of Female Characters with Secret vs Public Identity by Decade",
+    x = "Decade",
+    y = "Proportion",
+    fill = "Identity Type"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+# Count female characters introduced each year
+female_year_counts <- female_data %>%
+  group_by(year) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Plot number introduced per year
+ggplot(female_year_counts, aes(x = year, y = count)) +
+  geom_col() +
+  labs(
+    title = "Number of Female Characters Introduced Each Year",
+    x = "Year",
+    y = "Count of Female Characters"
+  ) +
+  theme_minimal()
+
+
+```
 # Research Question 3: Identity Type Distribution
 
 ```{r identity-type-distribution}
