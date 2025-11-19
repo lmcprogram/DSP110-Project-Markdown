@@ -1,0 +1,258 @@
+---
+title: "DSP 110 Project - Comic Character Analysis"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+# Setup and Data Loading
+
+```{r setup, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(janitor)
+library(coursekata)
+library(curl)
+```
+
+## Load Data from GitHub
+
+```{r load-data}
+# Get DC characters:
+comic_characters_dc <- 
+  "https://github.com/fivethirtyeight/data/raw/master/comic-characters/dc-wikia-data.csv" %>% 
+  read_csv() %>% 
+  clean_names() %>% 
+  mutate(publisher = "DC")
+
+# Get Marvel characters:
+comic_characters_marvel <- 
+  "https://github.com/fivethirtyeight/data/raw/master/comic-characters/marvel-wikia-data.csv" %>% 
+  read_csv() %>% 
+  clean_names() %>% 
+  mutate(publisher = "Marvel")
+```
+
+## Data Wrangling
+
+```{r wrangle-data}
+# Merge two datasets and perform further data wrangling:
+comic_characters <-
+  comic_characters_dc %>% 
+  bind_rows(comic_characters_marvel) %>% 
+  separate(first_appearance, c("year2", "month"), ", ", remove = FALSE) %>%
+  mutate(
+    # If month was missing, set as January and day as 01:
+    month = ifelse(is.na(month), "01", month),
+    day = "01",
+    # Note some years missing:
+    date = ymd(paste(year, month, day, sep = "-")),
+    align = factor(
+      align, 
+      levels = c("Bad Characters", "Reformed Criminals", "Netural Characters", "Good Characters"),
+      ordered = TRUE)
+  ) %>%
+  select(publisher, everything(), -c(year2, day))
+```
+
+## Data Exploration
+
+```{r explore-structure}
+str(comic_characters)
+```
+
+```{r explore-head}
+head(comic_characters)
+```
+
+```{r explore-sex}
+unique(comic_characters$sex)
+```
+
+```{r explore-id}
+unique(comic_characters$id)
+```
+
+## Data Cleaning
+
+```{r clean-data}
+comic_clean <- comic_characters %>%
+    mutate(sex = recode(sex,
+                      "Male Characters" = "Male",
+                      "Female Characters" = "Female",
+                      "Agender Characters" = "Agender",
+                      "Genderfluid Characters" = "Genderfluid",
+                      "Genderless Characters" = "Genderless")) %>%
+    filter(!is.na(sex), !is.na(id))
+```
+
+```{r exclusion-summary}
+# Calculate exclusion summary
+total_rows <- nrow(comic_characters)
+cleaned_rows <- nrow(comic_clean)
+excluded_rows <- total_rows - cleaned_rows
+excluded_percent <- (excluded_rows / total_rows) * 100
+
+cat("Rows removed due to missing sex or identity:", excluded_rows, 
+    "(", round(excluded_percent, 2), "% of total )\n")
+```
+
+# Research Question 1: Alive Status by Publisher
+
+```{r alive-by-publisher}
+valid_alive <- c("Living Characters", "Deceased Characters")
+
+# DC Characters
+barplot(
+  table(comic_characters_dc$alive[comic_characters_dc$alive %in% valid_alive]),
+  main = "DC Characters Alive vs Dead",
+  xlab = "Alive Status",
+  ylab = "Count",
+  col = c("red", "blue")
+)
+
+# Marvel Characters
+barplot(
+  table(comic_characters_marvel$alive[comic_characters_marvel$alive %in% valid_alive]),
+  main = "Marvel Characters Alive vs Dead",
+  xlab = "Alive Status",
+  ylab = "Count",
+  col = c("red", "blue")
+)
+```
+
+# Research Question 2: Secret Identity by Gender
+
+## Overall Analysis
+
+```{r identity-by-gender}
+by_gender <- comic_clean %>%
+  count(sex, id) %>%
+  group_by(sex) %>%
+  mutate(prop_within_gender = n / sum(n)) %>%
+  arrange(sex, desc(prop_within_gender))
+
+by_gender
+```
+
+```{r overall-identity}
+overall_id <- comic_clean %>%
+  count(id) %>%
+  mutate(prop_overall = n / sum(n)) %>%
+  arrange(desc(prop_overall))
+
+overall_id
+```
+
+## Male vs Female Focus
+
+```{r gender-mf-analysis}
+by_gender_MF <- comic_clean %>%
+  filter(sex %in% c("Male", "Female")) %>%
+  count(sex, id) %>%
+  group_by(sex) %>%
+  mutate(prop_within_gender = n / sum(n)) %>%
+  arrange(sex, desc(prop_within_gender))
+
+by_gender_MF
+```
+
+## Visualizations
+
+```{r gender-identity-plot, fig.width=8, fig.height=6}
+ggplot(comic_clean, aes(x = sex, fill = id)) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Do Genders Differ in Having a Secret Identity?",
+    y = "Proportion",
+    x = "Gender"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r gender-counts-plots, fig.width=10, fig.height=5}
+# Counts plot
+ggplot(comic_clean, aes(x = sex)) +
+  geom_bar() +
+  labs(title = "Number of Characters by Gender",
+       y = "Count", x = "Gender")
+
+# Proportions plot
+ggplot(comic_clean %>% 
+         filter(id %in% c("Secret Identity", "Public Identity")),
+       aes(x = sex, fill = id)) +
+  geom_bar(position = "fill") +
+  labs(title = "Secret vs Public Identities by Gender",
+       y = "Proportion", x = "Gender") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Probability Calculations
+
+```{r prob-calculations}
+prob_table <- comic_clean %>%
+  count(sex, id) %>%
+  group_by(sex) %>%
+  mutate(prop = n / sum(n)) %>%
+  filter(id == "Secret Identity")
+
+prob_table %>%
+  arrange(desc(prop))
+
+male_secret <- prob_table$prop[prob_table$sex == "Male"]
+female_secret <- prob_table$prop[prob_table$sex == "Female"]
+diff <- male_secret - female_secret
+
+cat("P(Secret | Male) =", round(male_secret, 4), "\n")
+cat("P(Secret | Female) =", round(female_secret, 4), "\n")
+cat("Difference =", round(diff, 4), "\n")
+```
+
+## DC-Specific Analysis
+
+```{r dc-gender-analysis}
+# Filter for DC characters only
+dc_data <- comic_clean %>%
+  filter(publisher == "DC", id %in% c("Secret Identity", "Public Identity"))
+
+p_secret_male_dc <- mean(dc_data$id[dc_data$sex == "Male"] == "Secret Identity", na.rm = TRUE)
+p_secret_female_dc <- mean(dc_data$id[dc_data$sex == "Female"] == "Secret Identity", na.rm = TRUE)
+diff_dc <- p_secret_male_dc - p_secret_female_dc
+
+cat("DC Comics:\n")
+cat("P(Secret | Male) =", round(p_secret_male_dc, 4), "\n")
+cat("P(Secret | Female) =", round(p_secret_female_dc, 4), "\n")
+cat("Difference =", round(diff_dc, 4), "\n")
+```
+
+# Research Question 3: Identity Type Distribution
+
+```{r identity-type-distribution}
+valid_ids <- c("Secret Identity", "Public Identity")
+
+# DC Characters
+barplot(
+  table(comic_characters_dc$id[comic_characters_dc$id %in% valid_ids]),
+  main = "DC Characters by Identity Type",
+  xlab = "Identity Type",
+  ylab = "Count"
+)
+
+# Marvel Characters
+barplot(
+  table(comic_characters_marvel$id[comic_characters_marvel$id %in% valid_ids]),
+  main = "Marvel Characters by Identity Type",
+  xlab = "Identity Type",
+  ylab = "Count"
+)
+```
+
+# Conclusions
+
+We wanted to know if a character's sex/gender affects their likelihood of having a secret identity, whether P(Secret | Male) is approximately equal to P(Secret | Female). If those two probabilities are roughly equal then gender and identity status can be considered independent.
+
+Male and female characters dominate the dataset when it comes to the sex variable. There is not enough data to make a meaningful conclusion about agender, genderfluid, or genderless characters. There is a notable imbalance of about a 3:1 ratio of male to female characters in this dataset, but their proportion of secret identities are almost identical.
+
+Since P(Secret | Male) = 0.499 and P(Secret | Female) = 0.480, the difference in proportions P(Secret | Male) - P(Secret | Female) = 0.0185. We can reasonably conclude that P(Secret | Gender) approximately equals P(Secret), meaning gender and secret identity status appear approximately independent in this dataset. We can conclude that knowing a character's gender gives little information about whether they have a secret identity.
