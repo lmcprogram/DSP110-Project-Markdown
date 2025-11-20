@@ -329,7 +329,10 @@ female_prop <- female_data %>%
     prop_secret = secret_count / total
   )
 
-empty_model <- lm(prop_secret ~ NULL, data = female_prop)
+#empty_model <- lm(prop_secret ~ NULL, data = female_prop)
+# Intercept-only model (baseline mean)
+empty_model <- lm(prop_secret ~ 1, data = female_prop)
+
 
 cat("Empty Model Summary:\n")
 summary(empty_model)
@@ -413,4 +416,80 @@ gf_theme(legend.position = "bottom")
 
 # Research Question 3: Do characters of different alignments differ in their number of comic appearances?
 
+```{r}
+# The data is skewed since there are a lot of characters with low numbers of apperances, to see better trends, we are looking at characters with more than 200 appearances and less than 200 appearances..
+# We are also looking at this distributes PER character alignment to see if that changes.
+#more than 300
+gf_histogram(~ appearances | align, data = comic_clean %>% filter(appearances > 200, !is.na(align))) %>%
+  gf_labs(
+    title = "Distribution of Comic Appearances (< 200)",
+    x="Appearances",
+    y="Count"
+  )
+
+# less than 200
+gf_histogram(~ appearances | align, data = comic_clean %>% filter(appearances < 200, !is.na(align))) %>%
+  gf_labs(
+    title = "Distribution of Comic Appearances (< 200)",
+    x="Appearances",
+    y="Count"
+  )
+
+
+
+```
+
 ## And are certain alignments more likely to be living or deceased?
+
+```{r}
+comic_clean %>%
+  filter(!is.na(align), !is.na(alive)) %>%
+  group_by(align, alive) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n))
+
+gf_bar(
+  ~ align, 
+  fill = ~ alive,
+  data = comic_clean %>% filter(!is.na(align), !is.na(alive)),
+  position = "fill"
+) %>%
+  gf_labs(
+    title = "Proportion of Living vs Deceased by Alignment",
+    x = "Alignment",
+    y = "Proportion"
+  )
+
+# Filter out missing alignments
+appearance_data <- comic_clean %>%
+  filter(!is.na(align), !is.na(appearances))
+
+# Fit one-way ANOVA
+anova_model <- aov(appearances ~ align, data = appearance_data)
+
+# View ANOVA table
+summary(anova_model)
+
+#The F-value  is very large, and the p-value is effectively zero, which means we can reject the null hypothesis that all alignment groups have the same mean.
+#Characters’ moral alignment is strongly associated with how often they appear in comics—some alignments consistently have more or fewer appearances than others
+
+alignment_summary <- comic_clean %>%
+  filter(!is.na(align)) %>%
+  group_by(align) %>%
+  summarise(
+    mean_appearances = mean(appearances, na.rm = TRUE),
+    median_appearances = median(appearances, na.rm = TRUE),
+    sd_appearances = sd(appearances, na.rm = TRUE),
+    min_appearances = min(appearances, na.rm = TRUE),
+    max_appearances = max(appearances, na.rm = TRUE),
+    n = n()
+  )
+
+print(alignment_summary)
+
+#Good characters have the highest average appearances, but the median is low → indicates a few “superstar” characters dominate appearances.
+#Bad characters appear least frequently on average, and the low median confirms most appear rarely.
+#Reformed characters are intermediate, both in mean and median.
+#The large Standard Deviation for Good characters highlights skewness—a few characters appear a lot, many appear few times.
+
+```
