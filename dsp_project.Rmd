@@ -102,16 +102,16 @@ comic_clean <- comic_characters %>%
     
     alive = recode(
       alive,
-      "Living Characters"   = "Living",
+      "Living Characters" = "Living",
       "Deceased Characters" = "Deceased"
     ),
     
     align = recode(
       align,
-      "Bad Characters"      = "Bad",
-      "Reformed Criminals"  = "Reformed",
-      "Neutral Characters"  = "Neutral",
-      "Good Characters"     = "Good"
+      "Bad Characters" = "Bad",
+      "Reformed Criminals" = "Reformed",
+      "Neutral Characters" = "Neutral",
+      "Good Characters" = "Good"
 ))
 ```
 
@@ -249,170 +249,107 @@ There is a notable imbalance of about a 3:1 ratio of male to female characters i
 
 Since P(Secret \| Male) = 0.55 and P(Secret \| Female) = 0.54, the difference in proportions P(Secret \| Male) - P(Secret \| Female) = 0.0146. We can reasonably conclude that P(Secret \| Gender) approximately equals P(Secret), meaning gender and secret identity status appear approximately independent in this dataset. We can conclude that knowing a character's gender gives little information about whether they have a secret identity.
 
-# Research Question 2: How do female characters added over time?
+# Research Question 2: Have more female or male characters appeared in comics over time?
 
-```{r female-characters-timeline, fig.width=10, fig.height=6}
-# Filter for female characters with valid year and identity data
-female_data <- comic_clean %>%
-  filter(sex == "Female", 
+We know from the preliminary EDA that more male characters have appeared over time but this question is trying to understand:
+
+1.  How many characters were introduced each year for each gender?
+
+2.  Is the number increasing over time and how strongly?
+
+3.  Does the trend differ between male and female characters?
+
+```{r}
+# Filter for male and female characters that have a valid year introduced
+gender_year <- comic_clean %>%
+  filter(sex %in% c("Male", "Female"),
          !is.na(year)) %>%
   mutate(year = as.numeric(year))
 
-# Create scatterplot with jitter
-gf_jitter(id ~ year, data = female_data, color = ~ id, 
-          height = 0.2, alpha = 0.6, size = 2) %>%
-  gf_labs(
-    title = "Female Characters' Identity Type by Year of Introduction",
-    x = "Year Introduced",
-    y = "Identity Type",
-    color = "Identity Type"
-  ) %>%
-  gf_theme(theme_minimal()) %>%
-  gf_theme(legend.position = "bottom")
-
-# Summary statistics by decade
-female_decade <- female_data %>%
-  mutate(decade = floor(year / 10) * 10) %>%
-  group_by(decade, id) %>%
-  summarise(count = n(), .groups = "drop") %>%
-  group_by(decade) %>%
-  mutate(prop = count / sum(count))
-
-# Plot proportion over time
-gf_col(prop ~ decade, fill = ~ id, data = female_decade, position = "fill") %>%
-  gf_labs(
-    title = "Proportion of Female Characters with Secret vs Public Identity by Decade",
-    x = "Decade",
-    y = "Proportion",
-    fill = "Identity Type"
-  ) %>%
-  gf_theme(theme_minimal()) %>%
-  gf_refine(scale_y_continuous(labels = scales::percent))
-
-# Count female characters introduced each year
-female_year_counts <- female_data %>%
-  group_by(year) %>%
+# Count the number per gender each year
+gender_counts <- gender_year %>%
+  group_by(year, sex) %>%
   summarise(count = n(), .groups = "drop")
 
-# Plot number introduced per year
-gf_col(count ~ year, data = female_year_counts) %>%
+# Plot a line graph for both genders
+gf_line(count ~ year, color = ~sex, data = gender_counts) %>%
   gf_labs(
-    title = "Number of Female Characters Introduced Each Year",
+    title = "Characters Introduced Over Time by Gender",
     x = "Year",
-    y = "Count of Female Characters"
-  ) %>%
-  gf_theme(theme_minimal())
+    y = "Count",
+    color = "Gender"
+  )
+```
 
-male_data <- comic_clean %>%
-  filter(sex == "Male", 
-         !is.na(year)) %>%
-  mutate(year = as.numeric(year))
+## Linear Model
 
-male_year_counts <- male_data %>%
-  group_by(year) %>%
-  summarise(count = n(), .groups = "drop")
+```{r}
+male_counts <- gender_counts %>% filter(sex == "Male")
+female_counts <- gender_counts %>% filter(sex == "Female")
 
-gf_col(count ~ year, data = male_year_counts) %>%
-  gf_labs(
-    title = "Number of Male Characters Introduced Each Year",
-    x = "Year",
-    y = "Count of Female Characters"
-  ) %>%
-  gf_theme(theme_minimal())
+model_male <- lm(count ~ year, data = male_counts)
+model_female <- lm(count ~ year, data = female_counts)
 
-# Calculate proportions for modeling
-female_prop <- female_data %>%
-  group_by(year) %>%
-  summarise(
-    total = n(),
-    secret_count = sum(id == "Secret Identity"),
-    prop_secret = secret_count / total
+summary(model_male)
+summary(model_female)
+```
+
+To examine whether male or female characters were introduced more frequently over time, we counted all characters by gender for each year and applied linear models.
+
+Male characters produced a positive slope of 4.16 with a p value \< 1e-13, meaning publishers introduced about 4 additional male characters each year. The model explains 54% of the variation (R² = 0.539).
+
+Female introductions also increased significantly over time, with a slope of 2.36 and a p value p \< 2e-16. Female characters introduced rose more consistently (R² = 0.739), though the total numbers were always lower than male characters.
+
+While both genders show strong upward trends, male characters grow faster in absolute terms. However, because the female model fits better, the growth in female characters is more stable over time. Female representation increased especially after 1980, even though proportion of males remained dominant.
+
+## Empty Model vs. Linear Model
+
+```{r}
+empty_male <- lm(count ~ 1, data = male_counts)
+empty_female <- lm(count ~ 1, data = female_counts)
+
+anova(empty_male, model_male)
+anova(empty_female, model_female)
+```
+
+The empty model here assumes every year introduces the same amount of characters. There is no year predictor like in the linear model before. For both male and female characters, the ANOVA comparison showed that adding “year” significantly improves the model fit.
+
+As can be seen the RSS droped significantly for both male and female. And the extremely small p-values indicates that year is a highly significant predictor of the number of male characters introduced.
+
+So these results confirm the number of characters introduced per year has increased significantly and has a real upward trend and not just due to randomness.
+
+```{r}
+confint(model_male)
+confint(model_female)
+```
+
+## Ratio of Male : Female Characters Over Time
+
+Here we plot the ratio of male to female characters over time to get a better idea of how they compare. The ratio is always above 1, meaning more males than females are introduced every year. At first the graph oscilates heavily due to limited female character, but it steadily declines and smooths out over time, indicating more female character introductions.
+
+```{r}
+# Compute male/female ratio
+gender_counts <- gender_counts %>%
+  mutate(
+    ratio = ifelse(Female == 0, NA, Male / Female)  # NA for divide-by-zero
   )
 
-#empty_model <- lm(prop_secret ~ NULL, data = female_prop)
-# Intercept-only model (baseline mean)
-empty_model <- lm(prop_secret ~ 1, data = female_prop)
-
-
-cat("Empty Model Summary:\n")
-summary(empty_model)
-cat("\nBaseline (mean proportion of secret identities):", round(coef(empty_model), 4), "\n")
-
-# Model with year as predictor
-year_model <- lm(prop_secret ~ year, data = female_prop)
-
-cat("\n\nYear Model Summary:\n")
-summary(year_model)
-
-# Compare models
-cat("\n\nModel Comparison:\n")
-cat("Empty Model R-squared:", round(summary(empty_model)$r.squared, 4), "\n")
-cat("Year Model R-squared:", round(summary(year_model)$r.squared, 4), "\n")
-
-# Scatterplot with regression line
-gf_point(prop_secret ~ year, data = female_prop, 
-         size = ~ total, alpha = 0.6, color = "purple") %>%
-  gf_lm(color = "blue", linewidth = 1.5) %>%
+gf_line(ratio ~ year, data = gender_counts, color = "blue") %>%
   gf_labs(
-    title = "Female Characters: Proportion with Secret Identity Over Time",
-    subtitle = "With linear regression trendline and 95% confidence interval",
-    x = "Year Introduced",
-    y = "Proportion with Secret Identity",
-    size = "# Characters"
+    title = "Male-to-Female Character Introduction Ratio Over Time",
+    x = "Year",
+    y = "Male : Female Ratio"
   ) %>%
-  gf_theme(theme_minimal()) %>%
-  gf_refine(scale_y_continuous(labels = scales::percent))
-# Filter for male characters
-
-male_data <- comic_clean %>%
-filter(sex == "Male", !is.na(year)) %>%
-mutate(year = as.numeric(year))
-
-# Calculate proportion secret by year for each sex
-
-male_prop <- male_data %>%
-group_by(year) %>%
-summarise(
-total = n(),
-secret_count = sum(id == "Secret Identity"),
-prop_secret = secret_count / total,
-sex = "Male",
-.groups = "drop"
-)
-
-female_prop <- female_data %>%
-group_by(year) %>%
-summarise(
-total = n(),
-secret_count = sum(id == "Secret Identity"),
-prop_secret = secret_count / total,
-sex = "Female",
-.groups = "drop"
-)
-
-combined_prop <- bind_rows(female_prop, male_prop)
-
-# Scatterplot with trendlines for both male & female
-
-gf_point(prop_secret ~ year,
-data = combined_prop,
-color = ~sex,
-size = ~total,
-alpha = 0.6) %>%
-gf_lm(color = ~sex, linewidth = 1.4) %>%
-gf_labs(
-title = "Proportion with Secret Identity Over Time (Male vs Female)",
-subtitle = "Each sex shown with its own trendline and weighted point sizes",
-x = "Year Introduced",
-y = "Proportion with Secret Identity",
-color = "Sex",
-size = "# Characters"
-) %>%
-gf_theme(theme_minimal()) %>%
-gf_refine(scale_y_continuous(labels = scales::percent)) %>%
-gf_theme(legend.position = "bottom")
-
+  gf_theme(theme_minimal())
 ```
+
+## Conclusions
+
+Across the full dataset, male characters have always been introduced in greater numbers than female characters. However, examining yearly counts shows a clear upward trend in the number of female characters introduced, especially from the 1980s onward.
+
+When we compared the two groups directly, the male-to-female introduction ratio steadily declines over time, but is still male dominated even in recent data.
+
+The linear model confirms this pattern statistically: The "year" variable is a meaningful predictor of the number of female characters introduced, showing a positive relationship between time and female representation.
 
 # Research Question 3: Do characters of different alignments differ in their number of comic appearances?
 
