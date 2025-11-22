@@ -325,16 +325,30 @@ confint(model_female)
 
 ## Ratio of Male : Female Characters Over Time
 
-Here we plot the ratio of male to female characters over time to get a better idea of how they compare. The ratio is always above 1, meaning more males than females are introduced every year. At first the graph oscilates heavily due to limited female character, but it steadily declines and smooths out over time, indicating more female character introductions.
+Here we plot the ratio of male to female characters over time to get a better idea of how they compare. The ratio is always above 1, even today, as marked by the red dashed line, meaning more males than females are introduced every year.
+
+At first the graph oscilates heavily due to limited female characters; there are many more males vs. females introduced, creating large proportions. However, some years there are many more males indroduced due to more characters introduced in general, and some years it's a little closer.
+
+As time goes on, it steadily declines and smooths out over time, indicating ratios closer to 1 and female character introductions.
 
 ```{r}
+gender_counts_wide %>%
+  arrange(desc(ratio)) %>%
+  select(year, Male, Female, ratio)
+
 # Compute male/female ratio
-gender_counts <- gender_counts %>%
+gender_counts_wide <- gender_counts %>%
+  tidyr::pivot_wider(
+    names_from = sex,
+    values_from = count,
+    values_fill = 0
+  ) %>%
   mutate(
-    ratio = ifelse(Female == 0, NA, Male / Female)  # NA for divide-by-zero
+    ratio = ifelse(Female == 0, NA, Male / Female)
   )
 
-gf_line(ratio ~ year, data = gender_counts, color = "blue") %>%
+gf_line(ratio ~ year, data = gender_counts_wide, color = "blue") %>%
+  gf_hline(yintercept = 1, color = "red", linetype = "dashed") %>%
   gf_labs(
     title = "Male-to-Female Character Introduction Ratio Over Time",
     x = "Year",
@@ -353,80 +367,89 @@ The linear model confirms this pattern statistically: The "year" variable is a m
 
 # Research Question 3: Do characters of different alignments differ in their number of comic appearances?
 
+Filter for characters that have valid alignments and have appeared at least once in a comic. Since there are only 3 reformed characters we ignore those and focus on Good vs. Bad characters. We also do drop 451 rows for good and 539 for bad; however, there are still just over 7,000 characters with appearances for good and 9,076 characters with appearances for bad, so we keep a sizable amount of the data to explore further.
+
 ```{r}
-# The data is skewed since there are a lot of characters with low numbers of apperances, to see better trends, we are looking at characters with more than 200 appearances and less than 200 appearances..
-# We are also looking at this distributes PER character alignment to see if that changes.
-#more than 300
-gf_histogram(~ appearances | align, data = comic_clean %>% filter(appearances > 200, !is.na(align))) %>%
-  gf_labs(
-    title = "Distribution of Comic Appearances (< 200)",
-    x="Appearances",
-    y="Count"
+appearance_data <- comic_clean %>%
+  filter(!is.na(align), !is.na(appearances))
+```
+
+```{r}
+comic_clean %>%
+  group_by(align) %>%
+  summarize(
+    total = n(),
+    appearances_missing = sum(is.na(appearances)),
+    appearances_present = sum(!is.na(appearances))
+  )
+```
+
+```{r}
+appearance_data <- comic_clean %>%
+  filter(!is.na(appearances),
+         align %in% c("Good", "Bad"))
+```
+
+## Plotting Appearances Distribution by Alignment
+
+The following plots show how Bad characters are more concentrated in their number of appearances while Good characters have far high standard deviation. Bad characters have a median of 3 but a mean of 9 while Good characters have a median of 6 and a mean of 35.
+
+```{r}
+appearance_data %>%
+  group_by(align) %>%
+  summarise(
+    n = n(),
+    mean_appearances = mean(appearances),
+    median_appearances = median(appearances),
+    sd_appearances = sd(appearances)
   )
 
-# less than 200
-gf_histogram(~ appearances | align, data = comic_clean %>% filter(appearances < 200, !is.na(align))) %>%
+gf_boxplot(appearances ~ align, data = appearance_data) %>%
   gf_labs(
-    title = "Distribution of Comic Appearances (< 200)",
-    x="Appearances",
-    y="Count"
+    title = "Comic Appearances by Character Alignment",
+    x = "Alignment",
+    y = "Number of Appearances"
   )
+```
 
+### ANOVA Table
 
+The following ANOVA table revealed a highly significant effect of alignment on the number of comic appearances (F about = 287 and p \< 2e-16).
 
+This means Good and Bad characters do not share the same average number of appearances. The differences observed between alignments are far too large to be explained by random chance, indicating that moral alignment is strongly associated with how frequently a character appears in comics and we reject the null hypothesis.
+
+```{r}
+anova_model <- aov(appearances ~ align, data = appearance_data)
+summary(anova_model)
 ```
 
 ## And are certain alignments more likely to be living or deceased?
 
+Just like when testing alignment, we filter out reformed and make sure we're only working with characters with alive status data.
+
 ```{r}
-comic_clean %>%
-  filter(!is.na(align), !is.na(alive)) %>%
+alive_data <- comic_clean %>%
+  filter(!is.na(align),
+         align %in% c("Good", "Bad"),
+         !is.na(alive))
+
+alive_summary <- alive_data %>%
   group_by(align, alive) %>%
   summarise(n = n()) %>%
   mutate(prop = n / sum(n))
+```
 
-gf_bar(
-  ~ align, 
-  fill = ~ alive,
-  data = comic_clean %>% filter(!is.na(align), !is.na(alive)),
-  position = "fill"
-) %>%
+The following plot reveals Good characters have the highest average appearances, but the median is low. Thus indicates a few characters that dominate number of appearances.
+
+Bad characters appear least frequently on average, and the low median confirms most appear rarely.
+
+The large Standard Deviation for Good characters highlights skewness: a few characters appear a lot, many appear few times.
+
+```{r}
+gf_bar(~align, fill = ~alive, data = alive_data, position = "fill") %>%
   gf_labs(
     title = "Proportion of Living vs Deceased by Alignment",
     x = "Alignment",
     y = "Proportion"
   )
-
-# Filter out missing alignments
-appearance_data <- comic_clean %>%
-  filter(!is.na(align), !is.na(appearances))
-
-# Fit one-way ANOVA
-anova_model <- aov(appearances ~ align, data = appearance_data)
-
-# View ANOVA table
-summary(anova_model)
-
-#The F-value  is very large, and the p-value is effectively zero, which means we can reject the null hypothesis that all alignment groups have the same mean.
-#Characters’ moral alignment is strongly associated with how often they appear in comics—some alignments consistently have more or fewer appearances than others
-
-alignment_summary <- comic_clean %>%
-  filter(!is.na(align)) %>%
-  group_by(align) %>%
-  summarise(
-    mean_appearances = mean(appearances, na.rm = TRUE),
-    median_appearances = median(appearances, na.rm = TRUE),
-    sd_appearances = sd(appearances, na.rm = TRUE),
-    min_appearances = min(appearances, na.rm = TRUE),
-    max_appearances = max(appearances, na.rm = TRUE),
-    n = n()
-  )
-
-print(alignment_summary)
-
-#Good characters have the highest average appearances, but the median is low → indicates a few “superstar” characters dominate appearances.
-#Bad characters appear least frequently on average, and the low median confirms most appear rarely.
-#Reformed characters are intermediate, both in mean and median.
-#The large Standard Deviation for Good characters highlights skewness—a few characters appear a lot, many appear few times.
-
 ```
