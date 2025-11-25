@@ -332,9 +332,6 @@ At first the graph oscilates heavily due to limited female characters; there are
 As time goes on, it steadily declines and smooths out over time, indicating ratios closer to 1 and female character introductions.
 
 ```{r}
-gender_counts_wide %>%
-  arrange(desc(ratio)) %>%
-  select(year, Male, Female, ratio)
 
 # Compute male/female ratio
 gender_counts_wide <- gender_counts %>%
@@ -346,6 +343,10 @@ gender_counts_wide <- gender_counts %>%
   mutate(
     ratio = ifelse(Female == 0, NA, Male / Female)
   )
+
+gender_counts_wide %>% 
+  arrange(desc(ratio)) %>%
+  select(year, Male, Female, ratio)
 
 gf_line(ratio ~ year, data = gender_counts_wide, color = "blue") %>%
   gf_hline(yintercept = 1, color = "red", linetype = "dashed") %>%
